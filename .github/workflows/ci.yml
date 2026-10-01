@@ -1,11 +1,16 @@
 
-name: Django CI
+
+name: Django CI and Docker Publish
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   test-and-build:
@@ -33,3 +38,33 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t azure-django-devops .
+
+  publish:
+    needs: test-and-build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set lowercase image name
+        id: image
+        run: |
+          echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t ${{ steps.image.outputs.name }}:latest \
+            -t ${{ steps.image.outputs.name }}:${{ github.sha }} .
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ steps.image.outputs.name }}:latest
+          docker push ${{ steps.image.outputs.name }}:${{ github.sha }}
